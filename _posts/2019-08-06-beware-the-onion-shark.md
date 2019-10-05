@@ -12,7 +12,7 @@ time to post something simple and I can always mess with it later.
 Coming soon! An explanation for wtf the picture on the left is. At least 
 probably soon.
 
-## Update 2019-10-04
+### Update 2019-10-04
 
 Ok, so I'm not an HTML or Javascript person, and when the blog didn't work right 
 before DEF CON I got frustrated and put the blog aside until "later".  Well it's 
