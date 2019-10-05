@@ -1,8 +1,14 @@
 @import url(//fonts.googleapis.com/css?family=Ubuntu:500&subset=latin,latin-ext);
 
-body{
+body {
 	color: #fff;
 	background-color: #212121;
+}
+
+.highlighter-rouge {
+	color: #fff;
+	background-color: #303030;
+	font-family: 'Ubuntu', monospace;
 }
 
 .sidebar {
