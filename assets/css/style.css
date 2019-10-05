@@ -17,10 +17,12 @@ body{
 	text-align: center;
 	margin-bottom: 10px;
 }
+/*
 .sidebar-header .title{
 	letter-spacing: 3px;
-	text-transform: uppercase;
+    text-transform: uppercase;
 }
+*/
 
 .sidebar-header .title a{
 	text-decoration: none;
@@ -85,6 +87,7 @@ article .share .gplus:hover {
 /*
 .page-header {
 	color: #e74c3c;
+	text-transform: uppercase;
 }
 */
 
