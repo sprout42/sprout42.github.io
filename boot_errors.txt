@@ -1,0 +1,81 @@
+So I was just working when things started acting strange and I found there was a journaling error my root partition had remounted the as read-only. The way to clean that up is unmount the disk and then run fsck on it which should repair any errors. BUT that requires rebooting and booting from a USB stick and I was feeling lazy so I just rebooted. When I rebooted I got another error. So then I started panicking because I didn't have a bootable Linux USB stick around and now I couldn't make one because things just refused to work. So I rebooted again, hoping it would clear, but then grub wasn't able to my root partition.
+
+I had made a full backup of my drive about a week earlier, and there were no changes on my local machine that weren't saved elsewhere, but it still would have been a huge pain to fix.
+
+After a few minutes of panicking I remembered this happened to me before. The first time I did a byte-by-byte copy onto my external USB backup disk I had the same problem. Last time I figured out it's because when you use LUKS+LVM encryption and have Ubuntu set it up automatically for you during install, a /etc/crypttab file is created to define how grub should mount the encrypted partition during boot. But by default it uses a partition UUID instead of path. This makes sense for most cases, because it means if you change how disks are connected or use a USB boot disk then it will always find the correct partition regardless of which port it's connected to.
+
+BUT if I make a byte-by-byte copy, and have it on a second disk, the UUID assigned to my root partition remains the same. It is possible to change a UUID. I always forget how to do this and I was busy panicking still so I changed the /etc/crypttab file to use the device path and not UUID. After changing that I ran update-initramfs to re-generate the initramfs used during boot to find and mount the root partition.
+
+    erin ~ $ cat /etc/crypttab
+    #nvme0n1p3_crypt UUID=b27488f9-b5c4-4146-9856-65e5b4c0ff23 none luks,discard
+    nvme0n1p3_crypt /dev/nvme0n1p3 none luks,discard
+
+    erin ~ $ sudo update-initramfs -u
+    update-initramfs: Generating /boot/initrd.img-5.15.0-58-generic
+
+After that change, and after rebooting my system everything worked perfectly. I am a little bit concerned about the initial journaling error? But those do just happen sometimes. It's possible it means my SSD is going bad :grimace: But at least I knew I had a backup that was just like two weeks old. But I really gotta make a script that does the backup process for me so I don't fuck it up again.
+
+Here's how you can look at the UUID for your mountable devices (I did remove extra mounted things from this list)
+
+    erin ~ $ sudo blkid
+    /dev/nvme0n1p1: UUID="1135-1C47" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="EFI System Partition" PARTUUID="0bb5d265-d941-409c-a4eb-06614a6481ca"
+    /dev/nvme0n1p2: UUID="a55f7f7d-c042-42f1-91b6-959c4b66cf12" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="3250a666-183e-4902-bbf8-ed6925fb871d"
+    /dev/nvme0n1p3: UUID="b27488f9-b5c4-4146-9856-65e5b4c0ff23" TYPE="crypto_LUKS" PARTUUID="eebda377-cb09-4e39-8c28-8e9b1e5303de"
+    /dev/sda1: UUID="1135-1C47" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="EFI System Partition" PARTUUID="0bb5d265-d941-409c-a4eb-06614a6481ca"
+    /dev/sda2: UUID="a55f7f7d-c042-42f1-91b6-959c4b66cf12" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="3250a666-183e-4902-bbf8-ed6925fb871d"
+    /dev/sda3: UUID="b27488f9-b5c4-4146-9856-65e5b4c0ff23" TYPE="crypto_LUKS" PARTUUID="eebda377-cb09-4e39-8c28-8e9b1e5303de"
+
+To change the UUID it requires a file-system specific tool. Most places you find online will suggest using tune2fs which is for ext2/3/4 filesystems.
+
+    erin ~ $ sudo tune2fs -U random /dev/sda2
+    tune2fs 1.46.5 (30-Dec-2021)
+    Recovering journal.
+
+    This operation requires a freshly checked filesystem.
+
+    Please run e2fsck -f on the filesystem.
+
+    erin ~ $ sudo e2fsck -f /dev/sda2
+    e2fsck 1.46.5 (30-Dec-2021)
+    /dev/sda2: recovering journal
+    Pass 1: Checking inodes, blocks, and sizes
+    Pass 2: Checking directory structure
+    Pass 3: Checking directory connectivity
+    Pass 4: Checking reference counts
+    Pass 5: Checking group summary information
+    /dev/sda2: 318/46848 files (2.2% non-contiguous), 118417/187392 blocks
+
+    erin ~ $ sudo tune2fs -U random /dev/sda2
+    tune2fs 1.46.5 (30-Dec-2021)
+    Setting the UUID on this filesystem could take some time.
+    Proceed anyway (or wait 5 seconds to proceed) ? (y,N) y
+
+    erin ~ $ sudo blkid | grep /dev/sda2
+    /dev/sda2: UUID="cddbf227-babe-4383-9b47-a81de2b7cce6" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="3250a666-183e-4902-bbf8-ed6925fb871d"
+
+But not a crypto_LUKS filesystem
+
+    erin ~ $ sudo tune2fs -U random /dev/sda3
+    tune2fs 1.46.5 (30-Dec-2021)
+    tune2fs: Bad magic number in super-block while trying to open /dev/sda3
+    /dev/sda3 contains a crypto_LUKS file system
+
+To change the UUID on a crypto_LUKS filesystem you need to use the cryptsetup utility. There is no random option for this tool so I use uuidgen to generate a new UUID:
+
+    erin ~ $ sudo cryptsetup luksUUID /dev/sda3 --uuid $(uuidgen)
+
+    WARNING!
+    ========
+    Do you really want to change UUID of device?
+
+    Are you sure? (Type 'yes' in capital letters): YES
+
+    erin ~ $ sudo blkid | grep /dev/sda3
+    /dev/sda3: UUID="a0912950-1a1c-4b30-8de1-47ed6e0dc295" TYPE="crypto_LUKS" PARTUUID="eebda377-cb09-4e39-8c28-8e9b1e5303de"
+
+To change the serial number of the FAT partition you have to use the mlabel tool. There is also no random option for this tool so I use openssl to generate a random hex string that is 8 characters (4 bytes) long:
+
+    erin ~ $ sudo mlabel -i /dev/sda1 -N $(openssl rand -hex 4)
+
+    erin ~ $ sudo blkid | grep /dev/sda1
+    /dev/sda1: UUID="411C-F603" BLOCK_SIZE="512" TYPE="vfat" PARTLABEL="EFI System Partition" PARTUUID="0bb5d265-d941-409c-a4eb-06614a6481ca"
